@@ -1,115 +1,123 @@
 #!/bin/bash
 
-export DEBIAN_FRONTEND=noninteractive
-OS=$(uname -m)
-MYIP=$(wget -qO- ipinfo.io/ip)
+[[ -e $(which curl) ]] && grep -q "1.1.1.1" /etc/resolv.conf || { 
+    echo "nameserver 1.1.1.1" | cat - /etc/resolv.conf >> /etc/resolv.conf.tmp && mv /etc/resolv.conf.tmp /etc/resolv.conf
+}
+
+clear
+red='\e[1;31m'
+green='\e[0;32m'
+blue='\e[0;34m'
+cyan='\e[0;36m'
+cyanb='\e[46m'
+white='\e[037;1m'
+grey='\e[1;36m'
+NC='\e[0m'
+# ==================================================
+# Lokasi Hosting Penyimpan autoscript
+hosting="https://scvps.rerechanstore.eu.org"
 domain=$(cat /etc/xray/domain)
-MYIP2="s/xxxxxxxxx/$domain/g"
 
-function ovpn_install() {
-    echo "Menghapus instalasi OpenVPN sebelumnya dan membuat direktori baru"
-    rm -rf /etc/openvpn
-    mkdir -p /etc/openvpn
-    echo "Mengunduh dan mengekstrak konfigurasi OpenVPN"
-    wget -O /etc/openvpn/vpn.zip "http://sacrifice.web.id/vpn.zip" >/dev/null 2>&1 
-    unzip -d /etc/openvpn/ /etc/openvpn/vpn.zip
-    rm -f /etc/openvpn/vpn.zip
-    chown -R root:root /etc/openvpn/server/easy-rsa/
-}
+# var installation
+export DEBIAN_FRONTEND=noninteractive
+OS=`uname -m`;
+MYIP=$(wget -qO- icanhazip.com);
+MYIP2="s/xxxxxxxxx/$MYIP/g";
+ANU=$(ip -o $ANU -4 route show to default | awk '{print $5}');
 
-function config_easy() {
-    echo "Konfigurasi Easy-RSA dan OpenVPN"
-    mkdir -p /usr/lib/openvpn/
-    cp /usr/lib/x86_64-linux-gnu/openvpn/plugins/openvpn-plugin-auth-pam.so /usr/lib/openvpn/openvpn-plugin-auth-pam.so
-    sed -i 's/#AUTOSTART="all"/AUTOSTART="all"/g' /etc/default/openvpn
-    systemctl enable openvpn-server@server-tcp
-    systemctl enable openvpn-server@server-udp
-    systemctl start openvpn-server@server-tcp
-    systemctl start openvpn-server@server-udp
-}
+# Install OpenVPN dan Easy-RSA
+apt install openvpn -y
+apt install openvpn easy-rsa -y
+apt install unzip -y
+apt install openssl iptables iptables-persistent -y
+mkdir -p /etc/openvpn/server/easy-rsa/
+cd /etc/openvpn/
+wget https://github.com/praiman99/AutoScriptVPN-AIO/raw/Beginner/vpn.zip
+unzip vpn.zip
+rm -f vpn.zip
+chown -R root:root /etc/openvpn/server/easy-rsa/
 
-function make_follow() {
-    echo "Mengatur forwarding IP dan membuat konfigurasi client"
-    echo 1 > /proc/sys/net/ipv4/ip_forward
-    sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/g' /etc/sysctl.conf
+cd
+mkdir -p /usr/lib/openvpn/
+cp /usr/lib/x86_64-linux-gnu/openvpn/plugins/openvpn-plugin-auth-pam.so /usr/lib/openvpn/openvpn-plugin-auth-pam.so
 
-    cat > /etc/openvpn/tcp.ovpn <<-END
+# nano /etc/default/openvpn
+sed -i 's/#AUTOSTART="all"/AUTOSTART="all"/g' /etc/default/openvpn
+
+# restart openvpn dan cek status openvpn
+systemctl enable --now openvpn-server@server-tcp-1194
+systemctl enable --now openvpn-server@server-udp-2200
+/etc/init.d/openvpn restart
+/etc/init.d/openvpn status
+
+# aktifkan ip4 forwarding
+echo 1 > /proc/sys/net/ipv4/ip_forward
+sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/g' /etc/sysctl.conf
+
+# Buat config client TCP 1194
+cat > /etc/openvpn/client-tcp-1194.ovpn <<-END
 client
 dev tun
 proto tcp
+setenv FRIENDLY_NAME "Beginner TCP"
 remote xxxxxxxxx 1194
+http-proxy xxxxxxxxx 3128
 resolv-retry infinite
 route-method exe
+auth-user-pass
+auth-nocache
 nobind
 persist-key
 persist-tun
-auth-user-pass
 comp-lzo
 verb 3
 END
-    sed -i $MYIP2 /etc/openvpn/tcp.ovpn
 
-    cat > /etc/openvpn/udp.ovpn <<-END
+sed -i $MYIP2 /etc/openvpn/client-tcp-1194.ovpn;
+
+# Buat config client UDP 2200
+cat > /etc/openvpn/client-udp-2200.ovpn <<-END
 client
 dev tun
 proto udp
-remote xxxxxxxxx 2200
+setenv FRIENDLY_NAME "Beginner UDP"
+remote xxxxxxxxx 3128
 resolv-retry infinite
 route-method exe
+auth-user-pass
+auth-nocache
 nobind
 persist-key
 persist-tun
-auth-user-pass
 comp-lzo
 verb 3
 END
-    sed -i $MYIP2 /etc/openvpn/udp.ovpn
 
-    cat > /etc/openvpn/ws-ssl.ovpn <<-END
-client
-dev tun
-proto tcp
-remote xxxxxxxxx 80
-resolv-retry infinite
-route-method exe
-nobind
-persist-key
-persist-tun
-auth-user-pass
-comp-lzo
-verb 3
-END
-    sed -i $MYIP2 /etc/openvpn/ws-ssl.ovpn
+sed -i $MYIP2 /etc/openvpn/client-udp-2200.ovpn;
 
-    cat > /etc/openvpn/ssl.ovpn <<-END
-client
-dev tun
-proto tcp
-remote xxxxxxxxx 443
-resolv-retry infinite
-route-method exe
-nobind
-persist-key
-persist-tun
-auth-user-pass
-comp-lzo
-verb 3
-END
-    sed -i $MYIP2 /etc/openvpn/ssl.ovpn
-}
+cd
+# pada tulisan xxx ganti dengan alamat ip address VPS anda
+/etc/init.d/openvpn restart
 
-function cert_ovpn() {
-    echo "Menambahkan sertifikat ke file konfigurasi client"
-    for conf in tcp.ovpn udp.ovpn ws-ssl.ovpn ssl.ovpn; do
-        echo '<ca>' >> /etc/openvpn/$conf
-        cat /etc/openvpn/server/ca.crt >> /etc/openvpn/$conf
-        echo '</ca>' >> /etc/openvpn/$conf
-        cp /etc/openvpn/$conf /var/www/html/$conf
-    done
+# masukkan certificatenya ke dalam config client TCP 1194
+echo '<ca>' >> /etc/openvpn/client-tcp-1194.ovpn
+cat /etc/openvpn/server/ca.crt >> /etc/openvpn/client-tcp-1194.ovpn
+echo '</ca>' >> /etc/openvpn/client-tcp-1194.ovpn
+
+# Copy config OpenVPN client ke home directory root agar mudah didownload ( TCP 1194 )
+cp /etc/openvpn/client-tcp-1194.ovpn /var/www/html/client-tcp-1194.ovpn
+
+# masukkan certificatenya ke dalam config client UDP 2200
+echo '<ca>' >> /etc/openvpn/client-udp-2200.ovpn
+cat /etc/openvpn/server/ca.crt >> /etc/openvpn/client-udp-2200.ovpn
+echo '</ca>' >> /etc/openvpn/client-udp-2200.ovpn
+
+# Copy config OpenVPN client ke home directory root agar mudah didownload ( UDP 2200 )
+cp /etc/openvpn/client-udp-2200.ovpn /var/www/html/client-udp-2200.ovpn
 
     # Membuat arsip ZIP dari konfigurasi
     cd /var/www/html/
-    zip FN-Project.zip tcp.ovpn udp.ovpn ssl.ovpn ws-ssl.ovpn > /dev/null 2>&1
+    zip FN-Project.zip tcp.ovpn client-udp-2200.ovpn > /dev/null 2>&1
     cd
 
     # Membuat halaman HTML untuk mengunduh konfigurasi
@@ -172,19 +180,11 @@ function cert_ovpn() {
     <ul>
       <li class="list-group-item d-flex justify-content-between align-items-center">
         <p>TCP <span class="badge">Android/iOS/PC/Modem</span></p>
-        <a href="https://IP-ADDRESS/fn/tcp.ovpn">Download</a>
+        <a href="https://IP-ADDRESS/fn/client-tcp-1194">Download</a>
       </li>
       <li class="list-group-item d-flex justify-content-between align-items-center">
         <p>UDP <span class="badge">Android/iOS/PC/Modem</span></p>
-        <a href="https://IP-ADDRESS/fn/udp.ovpn">Download</a>
-      </li>
-      <li class="list-group-item d-flex justify-content-between align-items-center">
-        <p>SSL <span class="badge">Android/iOS/PC/Modem</span></p>
-        <a href="https://IP-ADDRESS/fn/ssl.ovpn">Download</a>
-      </li>
-      <li class="list-group-item d-flex justify-content-between align-items-center">
-        <p>WS SSL <span class="badge">Android/iOS/PC/Modem</span></p>
-        <a href="https://IP-ADDRESS/fn/ws-ssl.ovpn">Download</a>
+        <a href="https://IP-ADDRESS/fn/client-udp-2200">Download</a>
       </li>
       <li class="list-group-item d-flex justify-content-between align-items-center">
         <p>ALL.zip <span class="badge">Android/iOS/PC/Modem</span></p>
@@ -197,18 +197,31 @@ function cert_ovpn() {
 EOF
 
     sed -i "s|IP-ADDRESS|$domain|g" /var/www/html/index.html
-}
+    
+#firewall untuk memperbolehkan akses UDP dan akses jalur TCP
 
-function install_ovpn() {
-    echo "Memulai instalasi OpenVPN"
-    ovpn_install
-    config_easy
-    make_follow
-    cert_ovpn
-    systemctl enable openvpn
-    systemctl start openvpn
-    echo "Instalasi OpenVPN selesai"
-}
+iptables -t nat -I POSTROUTING -s 10.6.0.0/24 -o $ANU -j MASQUERADE
+iptables -t nat -I POSTROUTING -s 10.7.0.0/24 -o $ANU -j MASQUERADE
+iptables-save > /etc/iptables.up.rules
+chmod +x /etc/iptables.up.rules
 
-# Menjalankan fungsi instalasi OpenVPN
-install_ovpn
+iptables-restore -t < /etc/iptables.up.rules
+netfilter-persistent save
+netfilter-persistent reload
+
+# Restart service openvpn
+systemctl daemon-reload
+systemctl enable openvpn
+systemctl start openvpn
+/etc/init.d/openvpn restart
+
+# Membuat File Zip OVPN
+cd /var/www/html
+zip openvpn.zip *.ovpn
+cd
+
+# Delete script
+history -c
+rm -f /root/*.sh
+rm -f /root/install
+rm -f /root/*install*

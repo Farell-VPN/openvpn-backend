@@ -117,7 +117,7 @@ cp /etc/openvpn/client-udp-2200.ovpn /var/www/html/client-udp-2200.ovpn
 
     # Membuat arsip ZIP dari konfigurasi
     cd /var/www/html/
-    zip FN-Project.zip tcp.ovpn client-udp-2200.ovpn > /dev/null 2>&1
+    zip FN-Project.zip client-tcp-1194.ovpn client-udp-2200.ovpn > /dev/null 2>&1
     cd
 
     # Membuat halaman HTML untuk mengunduh konfigurasi
@@ -180,11 +180,11 @@ cp /etc/openvpn/client-udp-2200.ovpn /var/www/html/client-udp-2200.ovpn
     <ul>
       <li class="list-group-item d-flex justify-content-between align-items-center">
         <p>TCP <span class="badge">Android/iOS/PC/Modem</span></p>
-        <a href="https://IP-ADDRESS/fn/client-tcp-1194">Download</a>
+        <a href="https://IP-ADDRESS/fn/client-tcp-1194.ovpn">Download</a>
       </li>
       <li class="list-group-item d-flex justify-content-between align-items-center">
         <p>UDP <span class="badge">Android/iOS/PC/Modem</span></p>
-        <a href="https://IP-ADDRESS/fn/client-udp-2200">Download</a>
+        <a href="https://IP-ADDRESS/fn/client-udp-2200.ovpn">Download</a>
       </li>
       <li class="list-group-item d-flex justify-content-between align-items-center">
         <p>ALL.zip <span class="badge">Android/iOS/PC/Modem</span></p>
@@ -220,8 +220,36 @@ cd /var/www/html
 zip openvpn.zip *.ovpn
 cd
 
+#Squid Proxy
+apt install sudo -y
+wget https://raw.githubusercontent.com/serverok/squid-proxy-installer/master/squid3-install.sh -O squid3-install.sh
+sudo bash squid3-install.sh
+rm -f squid3-install.sh
+
+if [ -f /etc/squid/squid.conf ]; then
+  cd /etc/squid
+  find . -type f -name "*squid.conf*" -exec sed -i 's|http_access allow password|http_access allow all|g' {} +
+  systemctl daemon-reload
+  systemctl restart squid
+else
+  cd /etc/squid3
+  find . -type f -name "*squid.conf*" -exec sed -i 's|http_access allow password|http_access allow all|g' {} +
+  systemctl daemon-reload
+  systemctl restart squid3
+fi
+
+#Setup Open HTTP Puncher
+cd
+wget -O ohp.sh "https://raw.githubusercontent.com/Farell-VPN/Backend-ssh/1.0/ohp.sh"
+chmod ohp.sh
+./ohp.sh
+rm -f ohp.sh
+
+cd
+
 # Delete script
 history -c
 rm -f /root/*.sh
 rm -f /root/install
 rm -f /root/*install*
+rm -f "$0"
